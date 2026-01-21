@@ -1141,7 +1141,7 @@ module ActiveRecord
 
         def invalidate_transaction(exception)
           return unless exception.is_a?(TransactionRollbackError)
-          return unless savepoint_errors_invalidate_transactions?
+          # return unless savepoint_errors_invalidate_transactions?
 
           current_transaction.invalidate!
         end
