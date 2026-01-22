@@ -450,4 +450,185 @@ class TransactionInstrumentationTest < ActiveRecord::TestCase
   ensure
     ActiveSupport::Notifications.unsubscribe(subscriber) if subscriber
   end
+
+  def test_silenced_rollback_instrumentation_fired_for_silenced_rollback
+    topic = topics(:fifth)
+
+    silenced_rollback_events = []
+
+    subscriber = ActiveSupport::Notifications.subscribe("transaction.active_record.silenced_rollback_errors") do |event|
+      silenced_rollback_events << event
+    end
+
+    ActiveRecord::Base.transaction do
+      topic.update(title: "Outer transaction")
+      ActiveRecord::Base.transaction do
+        topic.update(title: "Inner transaction")
+        raise ActiveRecord::Rollback, "Silenced rollback"
+      end
+    end
+
+    assert_equal 1, silenced_rollback_events.count
+
+    silenced_rollback_event = silenced_rollback_events.sole
+    silenced_rollback_errors = silenced_rollback_event.payload[:errors]
+
+    assert_not_nil silenced_rollback_errors
+    assert_equal 1, silenced_rollback_errors.count
+
+    silenced_rollback_error = silenced_rollback_errors.sole
+    assert_instance_of ActiveRecord::Rollback, silenced_rollback_error
+    assert_equal "Silenced rollback", silenced_rollback_error.message
+  ensure
+    ActiveSupport::Notifications.unsubscribe(subscriber) if subscriber
+  end
+
+  def test_silenced_rollback_instrumentation_fired_for_non_materialized_transaction
+    topic = topics(:fifth)
+
+    silenced_rollback_events = []
+
+    subscriber = ActiveSupport::Notifications.subscribe("transaction.active_record.silenced_rollback_errors") do |event|
+      silenced_rollback_events << event
+    end
+
+    ActiveRecord::Base.transaction do
+      ActiveRecord::Base.transaction do
+        topic.update(title: "Inner transaction")
+        raise ActiveRecord::Rollback, "Silenced rollback"
+      end
+    end
+
+    assert_equal 1, silenced_rollback_events.count
+
+    silenced_rollback_event = silenced_rollback_events.sole
+    silenced_rollback_errors = silenced_rollback_event.payload[:errors]
+
+    assert_not_nil silenced_rollback_errors
+    assert_equal 1, silenced_rollback_errors.count
+
+    silenced_rollback_error = silenced_rollback_errors.sole
+    assert_instance_of ActiveRecord::Rollback, silenced_rollback_error
+    assert_equal "Silenced rollback", silenced_rollback_error.message
+  ensure
+    ActiveSupport::Notifications.unsubscribe(subscriber) if subscriber
+  end
+
+  def test_silenced_rollback_instrumentation_not_fired_for_root_rolledback_transaction
+    topic = topics(:fifth)
+    notified = false
+
+    subscriber = ActiveSupport::Notifications.subscribe("transaction.active_record.silenced_rollback_errors") do |_|
+      notified = true
+    end
+
+    ActiveRecord::Base.transaction do
+      topic.update(title: "Ruby on Rails")
+      raise ActiveRecord::Rollback
+    end
+
+    assert_not notified
+  ensure
+    ActiveSupport::Notifications.unsubscribe(subscriber) if subscriber
+  end
+
+  def test_silenced_rollback_instrumentation_not_fired_without_rollback
+    topic = topics(:fifth)
+    notified = false
+
+    subscriber = ActiveSupport::Notifications.subscribe("transaction.active_record.silenced_rollback_errors") do |_|
+      notified = true
+    end
+
+    ActiveRecord::Base.transaction do
+      topic.update(title: "Ruby on Rails")
+    end
+
+    assert_not notified
+  ensure
+    ActiveSupport::Notifications.unsubscribe(subscriber) if subscriber
+  end
+
+  def test_silenced_rollback_instrumentation_not_fired_on_actual_rollback
+    topic = topics(:fifth)
+    notified = false
+
+    subscriber = ActiveSupport::Notifications.subscribe("transaction.active_record.silenced_rollback_errors") do |_|
+      notified = true
+    end
+
+    ActiveRecord::Base.transaction do
+      topic.update(title: "Ruby on Rails")
+      raise ActiveRecord::Rollback
+    end
+
+    assert_not notified
+  ensure
+    ActiveSupport::Notifications.unsubscribe(subscriber) if subscriber
+  end
+
+  def test_silenced_rollback_instrumentation_not_fired_on_actual_rollback_with_custom_error
+    topic = topics(:fifth)
+    notified = false
+
+    subscriber = ActiveSupport::Notifications.subscribe("transaction.active_record.silenced_rollback_errors") do |_|
+      notified = true
+    end
+
+    error = Class.new(StandardError)
+    assert_raises(error) do
+      ActiveRecord::Base.transaction do
+        topic.update(title: "Ruby on Rails")
+        raise error
+      end
+    end
+
+    assert_not notified
+  ensure
+    ActiveSupport::Notifications.unsubscribe(subscriber) if subscriber
+  end
+
+  def test_silenced_rollback_instrumentation_not_fired_for_savepoint_transaction
+    topic = topics(:fifth)
+    notified = false
+
+    subscriber = ActiveSupport::Notifications.subscribe("transaction.active_record.silenced_rollback_errors") do |_|
+      notified = true
+    end
+
+    ActiveRecord::Base.transaction do
+      topic.update(title: "Outer update")
+      ActiveRecord::Base.transaction(requires_new: true) do
+        topic.update(title: "Inner update")
+        raise ActiveRecord::Rollback, "Inner rollback"
+      end
+    end
+
+    assert_not notified
+  ensure
+    ActiveSupport::Notifications.unsubscribe(subscriber) if subscriber
+  end
+
+  def test_silenced_rollback_instrumentation_not_fired_when_root_transaction_is_rolledback
+    topic = topics(:fifth)
+    notified = false
+
+    subscriber = ActiveSupport::Notifications.subscribe("transaction.active_record.silenced_rollback_errors") do |_|
+      notified = true
+    end
+
+    ActiveRecord::Base.transaction do
+      topic.update(title: "Outer update")
+      ActiveRecord::Base.transaction(requires_new: true) do
+        topic.update(title: "Inner update")
+        raise ActiveRecord::Rollback, "Inner rollback"
+      end
+
+      raise ActiveRecord::Rollback, "Outer rollback"
+    end
+
+    assert_not notified
+  ensure
+    ActiveSupport::Notifications.unsubscribe(subscriber) if subscriber
+  end
 end

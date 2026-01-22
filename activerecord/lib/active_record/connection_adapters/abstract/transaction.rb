@@ -9,6 +9,7 @@ module ActiveRecord
       def initialize(state = nil)
         @state = state
         @children = nil
+        @silenced_rollbacks = nil
       end
 
       def add_child(state)
@@ -74,6 +75,20 @@ module ActiveRecord
       def nullify!
         @state = nil
       end
+
+      def add_silenced_rollback(rollback_error)
+        @silenced_rollbacks ||= []
+        @silenced_rollbacks << rollback_error
+      end
+
+      def silenced_rollbacks
+        return @silenced_rollbacks unless @children
+
+        [
+          @children&.map(&:silenced_rollbacks),
+          @silenced_rollbacks
+        ].flatten.compact
+      end
     end
 
     class TransactionInstrumenter
@@ -125,6 +140,7 @@ module ActiveRecord
       def after_rollback; end
       def user_transaction; ActiveRecord::Transaction::NULL_TRANSACTION; end
       def isolation=(_); end
+      def add_silenced_rollback(_); end
     end
 
     class Transaction # :nodoc:
@@ -149,7 +165,7 @@ module ActiveRecord
 
       attr_reader :connection, :state, :savepoint_name, :isolation_level, :user_transaction
 
-      delegate :invalidate!, :invalidated?, to: :@state
+      delegate :invalidate!, :invalidated?, :add_silenced_rollback, to: :@state
 
       # Returns the isolation level if it was explicitly set, nil otherwise
       def isolation
@@ -510,6 +526,14 @@ module ActiveRecord
           connection.reset_isolation_level if isolation_level
         end
         @state.full_commit!
+        silenced_rollbacks = @state.silenced_rollbacks
+        if silenced_rollbacks.present?
+          payload = { errors: silenced_rollbacks }
+          ActiveSupport::Notifications.instrumenter.instrument(
+            "transaction.active_record.silenced_rollback_errors",
+            payload
+          )
+        end
         @instrumenter.finish(:commit) if materialized?
       end
     end

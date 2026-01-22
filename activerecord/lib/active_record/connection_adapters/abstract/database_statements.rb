@@ -430,8 +430,9 @@ module ActiveRecord
         else
           within_new_transaction(isolation: isolation, joinable: joinable, &block)
         end
-      rescue ActiveRecord::Rollback
+      rescue ActiveRecord::Rollback => rollback_error
         # rollbacks are silently swallowed
+        current_transaction.add_silenced_rollback(rollback_error) unless requires_new
       ensure
         current_transaction.isolation = old_isolation if isolation_override
       end
