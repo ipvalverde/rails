@@ -445,6 +445,11 @@ module ActiveRecord
   #       redirect_to root_url
   #     end
   #   end
+  #
+  # If you raise an ActiveRecord::Rollback exception in a nested transaction not using `requires_new: true`,
+  # then the rollback will be silently swallowed and not passed on to the outer transaction - the database transaction
+  # *will not* be rolled back. You can subscribe to the "transaction.active_record.silenced_rollback_errors" active
+  # support notification to be notified when this happens.
   class Rollback < ActiveRecordError
   end
 
