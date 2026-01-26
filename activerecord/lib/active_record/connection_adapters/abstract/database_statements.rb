@@ -432,7 +432,11 @@ module ActiveRecord
         end
       rescue ActiveRecord::Rollback => rollback_error
         # rollbacks are silently swallowed
-        current_transaction.add_silenced_rollback(rollback_error) unless requires_new
+        if !requires_new && ActiveSupport::Notifications.notifier.listening?(
+          "transaction.active_record.silenced_rollback_errors"
+        )
+          current_transaction.add_silenced_rollback(rollback_error)
+        end
       ensure
         current_transaction.isolation = old_isolation if isolation_override
       end
