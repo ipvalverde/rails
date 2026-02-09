@@ -659,6 +659,41 @@ In practice, you cannot do much with the transaction object, but it may still be
 helpful for tracing database activity. For example, by tracking
 `transaction.uuid`.
 
+#### `silenced_rollback.active_record`
+
+This event is emitted when an `ActiveRecord::Rollback` exception is raised inside
+a nested transaction block but is silently ignored because the nested transaction
+joined the outer transaction (i.e. `requires_new: true` was not set).
+
+| Key                  | Value                                                |
+| -------------------- | ---------------------------------------------------- |
+| `:error`             | The `ActiveRecord::Rollback` exception               |
+| `:connection`        | Connection object                                    |
+
+When you call `ActiveRecord::Base.transaction` inside another transaction block
+without `requires_new: true`, Rails does not create a savepoint - it just joins
+the existing transaction. In this case, raising `ActiveRecord::Rollback` has no
+effect on the database and is silently swallowed. This event helps you detect
+such situations:
+
+```ruby
+ActiveRecord::Base.transaction do
+  User.create!(name: "Alice")
+
+  ActiveRecord::Base.transaction do
+    User.create!(name: "Bob")
+    raise ActiveRecord::Rollback  # This is silenced!
+  end
+
+  # Both Alice and Bob are persisted because the inner rollback was ignored.
+end
+```
+
+See [ActiveRecord::ConnectionAdapters::DatabaseStatements#transaction][] for more
+details on nested transaction behavior.
+
+[ActiveRecord::ConnectionAdapters::DatabaseStatements#transaction]: https://api.rubyonrails.org/classes/ActiveRecord/ConnectionAdapters/DatabaseStatements.html#method-i-transaction-label-Nested+transactions+support
+
 #### `deprecated_association.active_record`
 
 This event is emitted when a deprecated association is accessed, and the

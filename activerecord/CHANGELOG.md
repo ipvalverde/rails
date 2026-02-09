@@ -1,3 +1,15 @@
+*   Emit `silenced_rollback.active_record` notification when an `ActiveRecord::Rollback`
+    is silently swallowed inside a nested transaction that joined the outer transaction
+    (i.e. without `requires_new: true`).
+
+    ```ruby
+    ActiveSupport::Notifications.subscribe("silenced_rollback.active_record") do |event|
+      Rails.logger.warn("Silenced rollback detected: #{event.payload[:error].message}")
+    end
+    ```
+
+    *Israel P Valverde*
+
 *   Pass sql query to query log tags.
 
     ```ruby
